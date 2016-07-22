@@ -4,6 +4,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from hyperopt import tpe, hp, STATUS_OK, space_eval
 from hyperopt import fmin as hyperopt_fmin
 import sklearn.metrics as met
+from sklearn.base import clone
 
 class GeneralizedAdditiveRegressor(object):
     """Fit Generalized Additive Model with symmetric backfitting (we actualize the residuals once per batch)
@@ -18,12 +19,16 @@ class GeneralizedAdditiveRegressor(object):
     
     max_iter : the number of iteration to run in the backfitting algorithm. (default is 10)
     
-    ridge_alpha : the regularization coefficient for ridge regression upon the shape functions (in order to rescale them)
+    ridge_alpha : the regularization coefficient for ridge regression upon the shape functions in the backfitting 
+    (in order to rescale them)
     
     Attributes
     ----------
     
+    smoothers_ : list of the fitted smoothers (the shape functions)
     
+    ridge : ridge regressor used after each batch in the backfitting to rescale the shape functions
+        Its parameter alphas is given by the user (ridge_alphas)
     
     """
     
@@ -31,7 +36,7 @@ class GeneralizedAdditiveRegressor(object):
     def __init__(self, smoothers, max_iter=10, ridge_alphas=10.):
         self.smoothers = smoothers
         self.max_iter = max_iter
-        self.ridge = RidgeCV(alphas = [ridge_alphas]*len(smoothers), fit_intercept=False)
+        self.ridge_alphas = ridge_alphas
         
     def fit(self, X, y):
         """Fit the shape function of each features with the backfitting algorithm.
@@ -48,13 +53,15 @@ class GeneralizedAdditiveRegressor(object):
             The Generalized Additive Model with the fitted shape functions
         """
         
+        n_samples, n_features = X.shape
         
         if not isinstance(self.smoothers, list):
-            self.smoothers_ = [clone(self.smoothers_) for i in range(n_features) ]
+            self.smoothers_ = [clone(self.smoothers) for i in range(n_features) ]
+            self.ridge = RidgeCV(alphas = [self.ridge_alphas]*len(self.smoothers_), fit_intercept=False)
         else:
             self.smoothers_ = [clone(self.smoothers[j]) for j in range(n_features) ]
+            self.ridge = RidgeCV(alphas = [self.ridge_alphas]*len(self.smoothers_), fit_intercept=False)
             
-        n_samples, n_features = X.shape
         self.y_mean_ = np.mean(y)
         self.rmse_ = [] # array to stock the train error over the iteration
         y -= y.mean()
